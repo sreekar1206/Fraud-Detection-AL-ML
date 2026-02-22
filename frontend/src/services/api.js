@@ -1,9 +1,7 @@
 const API = 'http://localhost:8000';
 
 /**
- * Submit a transaction for fraud analysis.
- * @param {{ name: string, amount: number, device: string }} data
- * @returns {Promise<object>} TransactionOut
+ * Submit a transaction for advanced fraud analysis.
  */
 export async function submitTransaction(data) {
   const res = await fetch(`${API}/api/transaction`, {
@@ -20,10 +18,34 @@ export async function submitTransaction(data) {
 
 /**
  * Fetch all past transactions (newest first).
- * @returns {Promise<object[]>}
  */
 export async function getHistory() {
   const res = await fetch(`${API}/api/history`);
   if (!res.ok) throw new Error('Failed to fetch history');
+  return res.json();
+}
+
+/**
+ * Submit admin feedback on a transaction.
+ */
+export async function submitFeedback(transactionId, isFraud) {
+  const res = await fetch(`${API}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      transaction_id: transactionId,
+      is_fraud: isFraud,
+    }),
+  });
+  if (!res.ok) throw new Error('Feedback failed');
+  return res.json();
+}
+
+/**
+ * Trigger champion-challenger retrain.
+ */
+export async function triggerRetrain() {
+  const res = await fetch(`${API}/api/retrain`, { method: 'POST' });
+  if (!res.ok) throw new Error('Retrain failed');
   return res.json();
 }
