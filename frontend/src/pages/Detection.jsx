@@ -1,177 +1,84 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiShieldCheck, HiXCircle, HiCheckCircle, HiCpuChip, HiBolt, HiHome, HiSparkles } from 'react-icons/hi2';
+import {
+  HiShieldCheck,
+  HiXCircle,
+  HiCheckCircle,
+  HiBolt,
+  HiHome,
+  HiSparkles,
+  HiClock,
+} from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
-import { api, generateRandomTransaction } from '../services/api';
+import { submitTransaction, getHistory } from '../services/api';
 import Background3D from '../components/Background3D';
 
 const RISK_COLORS = {
-  LOW: 'from-emerald-500 to-teal-500',
-  MEDIUM: 'from-yellow-500 to-orange-500',
-  HIGH: 'from-orange-500 to-red-500',
-  CRITICAL: 'from-red-600 to-rose-600',
+  Low: 'from-emerald-500 to-teal-500',
+  Medium: 'from-yellow-500 to-orange-500',
+  High: 'from-red-600 to-rose-600',
 };
 
-const RISK_ICONS = {
-  LOW: HiCheckCircle,
-  MEDIUM: HiShieldCheck,
-  HIGH: HiXCircle,
-  CRITICAL: HiXCircle,
+const RISK_BORDER = {
+  Low: 'border-emerald-500/40',
+  Medium: 'border-yellow-500/40',
+  High: 'border-red-500/40',
 };
 
 export default function Detection() {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isTraining, setIsTraining] = useState(false);
-  const [currentTransaction, setCurrentTransaction] = useState(null);
-  const [prediction, setPrediction] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [modelTrained, setModelTrained] = useState(false);
-  const [checkingModel, setCheckingModel] = useState(true);
+  /* ── form state ── */
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [device, setDevice] = useState('Mobile');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [step, setStep] = useState(0); // 0: idle, 1: generating, 2: preprocessing, 3: analyzing, 4: complete
-  const [trainingProgress, setTrainingProgress] = useState('');
 
-  // Check if model is trained on mount and auto-train if needed
+  /* ── result + history ── */
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  /* load history on mount */
   useEffect(() => {
-    checkModelStatus();
+    getHistory().then(setHistory).catch(() => { });
   }, []);
 
-  const checkModelStatus = async () => {
-    setCheckingModel(true);
-    try {
-      // Try to make a test prediction to see if model exists
-      const testTx = generateRandomTransaction();
-      await api.predictFraud(testTx);
-      setModelTrained(true);
-      // Load stats
-      try {
-        const statsData = await api.getStats();
-        setStats(statsData);
-      } catch (err) {
-        // Stats might fail, that's okay
-      }
-      setCheckingModel(false);
-    } catch (err) {
-      // Model not trained - automatically train it
-      if (err.message.includes('No trained model') || err.message.includes('not found')) {
-        // Auto-train the model
-        await trainModel();
-      } else {
-        setModelTrained(false);
-        setCheckingModel(false);
-      }
-    }
-  };
-
-  const trainModel = async () => {
-    setIsTraining(true);
-    setCheckingModel(false);
+  /* ── submit handler ── */
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError(null);
-    setTrainingProgress('Initializing training...');
+    setResult(null);
+    setLoading(true);
 
     try {
-      setTrainingProgress('Generating synthetic dataset (10,000 samples)...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      setTrainingProgress('Fitting encoders and preprocessing features...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      setTrainingProgress('Training ML models (Logistic Regression, Random Forest, XGBoost, Isolation Forest)...');
-      
-      // Start the actual training
-      const result = await api.trainModel();
-      
-      setModelTrained(true);
-      setTrainingProgress('Training complete! Model saved successfully.');
-      
-      // Load stats after training
-      try {
-        const statsData = await api.getStats();
-        setStats(statsData);
-      } catch (err) {
-        // Stats might fail, that's okay
-      }
-      
-      // Clear progress after a moment
-      setTimeout(() => {
-        setTrainingProgress('');
-      }, 2000);
-      
+      const data = await submitTransaction({
+        name,
+        amount: parseFloat(amount),
+        device,
+      });
+      setResult(data);
+      // refresh history
+      const h = await getHistory();
+      setHistory(h);
     } catch (err) {
-      setError(err.message || 'Training failed. Please make sure the backend server is running on http://localhost:8000');
-      setTrainingProgress('');
-      setModelTrained(false);
+      setError(
+        err.message || 'Something went wrong. Is the backend running on http://localhost:8000?'
+      );
     } finally {
-      setIsTraining(false);
-      setCheckingModel(false);
+      setLoading(false);
     }
   };
 
-  const analyzeTransaction = async () => {
-    if (!modelTrained) {
-      setError('Model not trained. Please train the model first.');
-      return;
-    }
-
-    setIsAnalyzing(true);
-    setError(null);
-    setPrediction(null);
-    setStep(1); // Generating
-
-    // Generate random transaction
-    const transaction = generateRandomTransaction();
-    setCurrentTransaction(transaction);
-
-    // Simulate processing steps
-    setTimeout(() => setStep(2), 500); // Preprocessing
-    setTimeout(() => setStep(3), 1000); // Analyzing
-
-    try {
-      const result = await api.predictFraud(transaction);
-      setPrediction(result);
-      setHistory(prev => [result, ...prev].slice(0, 10)); // Keep last 10
-      setStep(4); // Complete
-
-      // Update stats
-      try {
-        const statsData = await api.getStats();
-        setStats(statsData);
-      } catch (err) {
-        // Stats might fail, that's okay
-      }
-    } catch (err) {
-      setError(err.message || 'Prediction failed. Make sure the model is trained.');
-      setStep(0);
-    } finally {
-      setIsAnalyzing(false);
-      setTimeout(() => setStep(0), 2000);
-    }
-  };
-
-
-  const getRiskColor = (riskLevel) => {
-    return RISK_COLORS[riskLevel] || RISK_COLORS.LOW;
-  };
-
-  const getRiskIcon = (riskLevel) => {
-    const Icon = RISK_ICONS[riskLevel] || HiCheckCircle;
-    return Icon;
-  };
-
-  const stepMessages = {
-    1: 'Generating Transaction Data...',
-    2: 'Preprocessing Features...',
-    3: 'Running ML Analysis...',
-    4: 'Analysis Complete!',
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString();
   };
 
   return (
     <div className="relative bg-dark-900 min-h-screen overflow-x-hidden">
-      {/* 3D Background */}
       <Background3D />
 
-      {/* Navigation Bar */}
+      {/* ── Navbar ── */}
       <motion.nav
         initial={{ y: -100 }}
         animate={{ y: 0 }}
@@ -197,7 +104,7 @@ export default function Detection() {
 
       <section className="relative min-h-screen py-20 pt-32 z-10">
         <div className="max-w-7xl mx-auto px-6">
-          {/* Header */}
+          {/* ── Header ── */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -205,301 +112,266 @@ export default function Detection() {
           >
             <div className="inline-flex items-center gap-2 glass rounded-full px-5 py-2 mb-6">
               <HiSparkles className="text-emerald-400" />
-              <span className="text-sm text-slate-300 font-medium">Real-Time ML Analysis</span>
+              <span className="text-sm text-slate-300 font-medium">
+                Real-Time ML Analysis
+              </span>
             </div>
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-4">
-              Real-Time <span className="gradient-text">Threat Detection</span>
+              Real-Time <span className="gradient-text">Fraud Detection</span>
             </h1>
             <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-              Watch our ML models analyze transactions in real-time. Generate random transactions and see how our AI detects fraud instantly.
+              Enter a transaction below and let our AI instantly evaluate the
+              fraud risk.
             </p>
           </motion.div>
 
-          {/* Model Training Status */}
-          {(checkingModel || isTraining) ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="glass rounded-2xl p-6 mb-8 border-2 border-indigo-500/30"
-            >
-              <div className="flex items-center gap-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-400"></div>
-                <div className="flex-1">
-                  <p className="text-white font-semibold mb-1">
-                    {isTraining ? 'Training ML Model...' : 'Initializing...'}
-                  </p>
-                  {trainingProgress && (
-                    <>
-                      <p className="text-slate-300 text-sm mb-2">{trainingProgress}</p>
-                      <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: '100%' }}
-                          transition={{ duration: 45, ease: 'linear' }}
-                          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500"
-                        />
-                      </div>
-                    </>
-                  )}
-                  {!trainingProgress && (
-                    <p className="text-slate-400 text-sm">Please wait while we set up the model...</p>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          ) : modelTrained ? (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-2xl p-4 mb-8 border-2 border-emerald-500/30 bg-emerald-500/5"
-            >
-              <div className="flex items-center gap-3">
-                <HiCheckCircle className="text-2xl text-emerald-400" />
-                <div>
-                  <p className="text-emerald-400 font-semibold">Model Ready</p>
-                  <p className="text-slate-400 text-sm">You can now analyze transactions in real-time!</p>
-                </div>
-              </div>
-            </motion.div>
-          ) : null}
-
-          {/* Error Display */}
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-xl p-4 mb-6 border-2 border-red-500/30 bg-red-500/10"
-            >
-              <div className="flex items-center gap-3">
-                <HiXCircle className="text-red-400 text-xl" />
-                <p className="text-red-400 font-medium">Error: {error}</p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Control Panel */}
-          <div className="grid md:grid-cols-2 gap-6 mb-8">
-            {/* Action Buttons */}
-            <div className="glass rounded-2xl p-6">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <HiBolt className="text-indigo-400" />
-                Actions
-              </h3>
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={analyzeTransaction}
-                  disabled={isAnalyzing || !modelTrained || isTraining}
-                  className="btn-primary px-6 py-4 rounded-xl font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  <HiBolt className="text-xl" />
-                  {isAnalyzing ? 'Analyzing...' : 'Analyze Random Transaction'}
-                </button>
-              </div>
-
-              {/* Processing Steps */}
-              {isAnalyzing && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="mt-6 space-y-2"
-                >
-                  {[1, 2, 3, 4].map((s) => (
-                    <div
-                      key={s}
-                      className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-                        step >= s
-                          ? 'bg-indigo-500/20 border border-indigo-500/50'
-                          : 'bg-slate-800/50'
-                      }`}
-                    >
-                      <div
-                        className={`w-2 h-2 rounded-full ${
-                          step >= s ? 'bg-indigo-400' : 'bg-slate-600'
-                        }`}
-                      />
-                      <span className="text-sm text-slate-300">
-                        {stepMessages[s]}
-                      </span>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </div>
-
-            {/* Current Transaction */}
-            {currentTransaction && (
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="glass rounded-2xl p-6"
-              >
-                <h3 className="text-xl font-bold text-white mb-4">Transaction Details</h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between items-center p-3 glass-strong rounded-lg">
-                    <span className="text-slate-400">Amount:</span>
-                    <span className="text-white font-bold text-lg">${currentTransaction.amount.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between p-3 glass-strong rounded-lg">
-                    <span className="text-slate-400">Location:</span>
-                    <span className="text-white">{currentTransaction.location}</span>
-                  </div>
-                  <div className="flex justify-between p-3 glass-strong rounded-lg">
-                    <span className="text-slate-400">Device:</span>
-                    <span className="text-white">{currentTransaction.device_type}</span>
-                  </div>
-                  <div className="flex justify-between p-3 glass-strong rounded-lg">
-                    <span className="text-slate-400">Merchant:</span>
-                    <span className="text-white">{currentTransaction.merchant_id}</span>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </div>
-
-          {/* Prediction Result */}
+          {/* ── Error ── */}
           <AnimatePresence>
-            {prediction && (
+            {error && (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="glass rounded-2xl p-8 mb-8 glow-border"
+                exit={{ opacity: 0 }}
+                className="glass rounded-xl p-4 mb-6 border-2 border-red-500/30 bg-red-500/10"
               >
-                <div className="flex items-start justify-between mb-6">
-                  <div>
-                    <h3 className="text-2xl font-bold text-white mb-2">ML Analysis Result</h3>
-                    <p className="text-slate-400">Model: {prediction.model_used}</p>
-                  </div>
-                  <div className={`px-4 py-2 rounded-xl bg-gradient-to-br ${getRiskColor(prediction.risk_level)}`}>
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const Icon = getRiskIcon(prediction.risk_level);
-                        return <Icon className="text-xl text-white" />;
-                      })()}
-                      <span className="text-white font-bold">{prediction.risk_level}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-3 gap-6 mb-6">
-                  {/* Fraud Probability */}
-                  <div className="glass-strong rounded-xl p-4">
-                    <p className="text-slate-400 text-sm mb-2">Fraud Probability</p>
-                    <p className="text-3xl font-bold text-white">
-                      {(prediction.fraud_probability * 100).toFixed(2)}%
-                    </p>
-                    <div className="mt-3 h-2 bg-slate-700 rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${prediction.fraud_probability * 100}%` }}
-                        transition={{ duration: 1, ease: 'easeOut' }}
-                        className={`h-full bg-gradient-to-r ${getRiskColor(prediction.risk_level)}`}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Fraud Score */}
-                  <div className="glass-strong rounded-xl p-4">
-                    <p className="text-slate-400 text-sm mb-2">Fraud Score</p>
-                    <p className="text-3xl font-bold text-white">{prediction.fraud_score}</p>
-                    <p className="text-xs text-slate-500 mt-2">Out of 100</p>
-                  </div>
-
-                  {/* Is Fraud */}
-                  <div className="glass-strong rounded-xl p-4">
-                    <p className="text-slate-400 text-sm mb-2">Detection</p>
-                    <div className="flex items-center gap-2">
-                      {prediction.is_fraud ? (
-                        <>
-                          <HiXCircle className="text-3xl text-red-500" />
-                          <span className="text-xl font-bold text-red-400">FRAUD DETECTED</span>
-                        </>
-                      ) : (
-                        <>
-                          <HiCheckCircle className="text-3xl text-emerald-500" />
-                          <span className="text-xl font-bold text-emerald-400">LEGITIMATE</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="glass-strong rounded-xl p-4">
-                  <p className="text-slate-300">{prediction.message}</p>
+                <div className="flex items-center gap-3">
+                  <HiXCircle className="text-red-400 text-xl flex-shrink-0" />
+                  <p className="text-red-400 font-medium">{error}</p>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Statistics */}
-          {stats && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-2xl p-6 mb-8"
+          {/* ── Main grid ── */}
+          <div className="grid lg:grid-cols-2 gap-8 mb-10">
+            {/* ── Form ── */}
+            <motion.form
+              onSubmit={handleSubmit}
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="glass rounded-2xl p-8"
             >
-              <h3 className="text-xl font-bold text-white mb-4">Overall Statistics</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="glass-strong rounded-xl p-4">
-                  <p className="text-slate-400 text-sm">Total Transactions</p>
-                  <p className="text-2xl font-bold text-white">{stats.total_transactions}</p>
-                </div>
-                <div className="glass-strong rounded-xl p-4">
-                  <p className="text-slate-400 text-sm">Fraud Detected</p>
-                  <p className="text-2xl font-bold text-red-400">{stats.total_fraud}</p>
-                </div>
-                <div className="glass-strong rounded-xl p-4">
-                  <p className="text-slate-400 text-sm">Legitimate</p>
-                  <p className="text-2xl font-bold text-emerald-400">{stats.total_legitimate}</p>
-                </div>
-                <div className="glass-strong rounded-xl p-4">
-                  <p className="text-slate-400 text-sm">Fraud Rate</p>
-                  <p className="text-2xl font-bold text-yellow-400">{stats.fraud_rate}%</p>
-                </div>
-              </div>
-            </motion.div>
-          )}
+              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <HiBolt className="text-indigo-400" />
+                Analyse Transaction
+              </h3>
 
-          {/* History */}
+              {/* Name */}
+              <label className="block mb-5">
+                <span className="text-slate-400 text-sm mb-1 block">
+                  Customer Name
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Alice Johnson"
+                  className="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                />
+              </label>
+
+              {/* Amount */}
+              <label className="block mb-5">
+                <span className="text-slate-400 text-sm mb-1 block">
+                  Amount (USD)
+                </span>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="e.g. 5000"
+                  className="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                />
+              </label>
+
+              {/* Device */}
+              <label className="block mb-6">
+                <span className="text-slate-400 text-sm mb-1 block">
+                  Device Type
+                </span>
+                <select
+                  value={device}
+                  onChange={(e) => setDevice(e.target.value)}
+                  className="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition appearance-none"
+                >
+                  <option value="Mobile">Mobile</option>
+                  <option value="Desktop">Desktop</option>
+                  <option value="Tablet">Tablet</option>
+                </select>
+              </label>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full py-4 rounded-xl font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                    Analysing…
+                  </>
+                ) : (
+                  <>
+                    <HiBolt className="text-xl" />
+                    Analyse Transaction
+                  </>
+                )}
+              </button>
+            </motion.form>
+
+            {/* ── Result card ── */}
+            <AnimatePresence mode="wait">
+              {result ? (
+                <motion.div
+                  key="result"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 30 }}
+                  className={`glass rounded-2xl p-8 border-2 ${RISK_BORDER[result.risk_level] || 'border-slate-700'
+                    }`}
+                >
+                  <div className="flex items-start justify-between mb-6">
+                    <h3 className="text-xl font-bold text-white">
+                      Analysis Result
+                    </h3>
+                    <span
+                      className={`px-4 py-1.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r ${RISK_COLORS[result.risk_level] || ''
+                        }`}
+                    >
+                      {result.risk_level} Risk
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    <Row label="Name" value={result.name} />
+                    <Row
+                      label="Amount"
+                      value={`$${Number(result.amount).toLocaleString(
+                        undefined,
+                        { minimumFractionDigits: 2 }
+                      )}`}
+                    />
+                    <Row label="IP Address" value={result.ip_address} />
+
+                    {/* probability bar */}
+                    <div className="glass-strong rounded-xl p-4">
+                      <p className="text-slate-400 text-sm mb-1">
+                        Fraud Probability
+                      </p>
+                      <p className="text-3xl font-bold text-white mb-2">
+                        {result.fraud_probability}%
+                      </p>
+                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{
+                            width: `${result.fraud_probability}%`,
+                          }}
+                          transition={{ duration: 0.8, ease: 'easeOut' }}
+                          className={`h-full bg-gradient-to-r ${RISK_COLORS[result.risk_level] || ''
+                            }`}
+                        />
+                      </div>
+                    </div>
+
+                    <Row label="Timestamp" value={fmtDate(result.timestamp)} />
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="placeholder"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="glass rounded-2xl p-8 flex flex-col items-center justify-center text-center"
+                >
+                  <HiShieldCheck className="text-6xl text-indigo-500/40 mb-4" />
+                  <p className="text-slate-500 text-lg">
+                    Submit a transaction to see the analysis
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── History ── */}
           {history.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="glass rounded-2xl p-6"
             >
-              <h3 className="text-xl font-bold text-white mb-4">Recent Analyses</h3>
-              <div className="space-y-2">
-                {history.slice(0, 5).map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="glass-strong rounded-lg p-4 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-3 h-3 rounded-full ${
-                        item.is_fraud ? 'bg-red-500' : 'bg-emerald-500'
-                      }`} />
-                      <div>
-                        <p className="text-white font-medium">
-                          Transaction #{item.transaction_id} - ${item.amount}
-                        </p>
-                        <p className="text-slate-400 text-sm">{item.model_used}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`px-3 py-1 rounded-lg text-sm font-semibold bg-gradient-to-r ${getRiskColor(item.risk_level)} text-white`}>
-                        {item.risk_level}
-                      </span>
-                      <span className="text-slate-400 text-sm">
-                        {(item.fraud_probability * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
+              <h3 className="text-xl font-bold text-white mb-5 flex items-center gap-2">
+                <HiClock className="text-indigo-400" />
+                Transaction History
+              </h3>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-slate-400 border-b border-slate-700">
+                      <th className="pb-3 pr-4">Name</th>
+                      <th className="pb-3 pr-4">Amount</th>
+                      <th className="pb-3 pr-4">IP</th>
+                      <th className="pb-3 pr-4">Probability</th>
+                      <th className="pb-3 pr-4">Risk</th>
+                      <th className="pb-3">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((tx, i) => (
+                      <tr
+                        key={i}
+                        className="border-b border-slate-800 hover:bg-slate-800/40 transition"
+                      >
+                        <td className="py-3 pr-4 text-white font-medium">
+                          {tx.name}
+                        </td>
+                        <td className="py-3 pr-4 text-white">
+                          ${Number(tx.amount).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="py-3 pr-4 text-slate-400">
+                          {tx.ip_address}
+                        </td>
+                        <td className="py-3 pr-4 text-white font-semibold">
+                          {tx.fraud_probability}%
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-gradient-to-r ${RISK_COLORS[tx.risk_level] || ''
+                              }`}
+                          >
+                            {tx.risk_level}
+                          </span>
+                        </td>
+                        <td className="py-3 text-slate-400 text-xs whitespace-nowrap">
+                          {fmtDate(tx.timestamp)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </motion.div>
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+/* helper component */
+function Row({ label, value }) {
+  return (
+    <div className="flex justify-between items-center p-3 glass-strong rounded-lg">
+      <span className="text-slate-400">{label}</span>
+      <span className="text-white font-medium">{value}</span>
     </div>
   );
 }

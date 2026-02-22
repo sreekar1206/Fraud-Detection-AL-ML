@@ -1,69 +1,57 @@
 """
 Fraud prediction module.
 
-Loads the trained model and preprocesses incoming transactions
-to produce fraud probability scores.
+Loads the trained RandomForest model and predicts fraud probability
+for a transaction described by (amount, device, hour).
 """
-import os
 import numpy as np
 import joblib
 
 from ..config import MODEL_PATH
-from .preprocessing import preprocess_single_transaction
 
 
-def predict_fraud(transaction_data: dict) -> dict:
+# Device encoding – must match training
+DEVICE_MAP = {"Mobile": 0, "Desktop": 1, "Tablet": 2}
+
+# Model loaded once at import time (after training ensures it exists)
+_model = None
+
+
+def _load_model():
+    """Lazy-load the model from disk."""
+    global _model
+    _model = joblib.load(MODEL_PATH)
+
+
+def predict_fraud(amount: float, device: str, hour: int) -> dict:
     """
-    Predict whether a transaction is fraudulent.
+    Predict fraud probability for a single transaction.
 
     Args:
-        transaction_data: dict with keys: amount, transaction_time, location, device_type, merchant_id
+        amount:  Transaction amount in USD.
+        device:  Device type string ("Mobile", "Desktop", "Tablet").
+        hour:    Hour of the day (0-23).
 
     Returns:
-        dict with: fraud_probability, is_fraud, fraud_score, risk_level, model_used
+        dict with fraud_probability (0-100) and risk_level.
     """
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(
-            "No trained model found. Please train the model first via POST /train-model."
-        )
+    if _model is None:
+        _load_model()
 
-    # Load model
-    model = joblib.load(MODEL_PATH)
-    model_name = type(model).__name__
+    device_enc = DEVICE_MAP.get(device, 0)
+    X = np.array([[amount, device_enc, hour]])
 
-    # Preprocess input
-    X = preprocess_single_transaction(transaction_data)
+    proba = float(_model.predict_proba(X)[0][1])  # P(fraud)
+    fraud_pct = round(proba * 100, 2)
 
-    # Make prediction
-    if hasattr(model, "predict_proba"):
-        # Standard classifiers (LR, RF, XGBoost)
-        fraud_probability = float(model.predict_proba(X)[0][1])
-        is_fraud = bool(model.predict(X)[0])
+    if proba > 0.7:
+        risk = "High"
+    elif proba > 0.3:
+        risk = "Medium"
     else:
-        # Isolation Forest: -1 = anomaly = fraud
-        raw_pred = model.predict(X)[0]
-        anomaly_score = model.decision_function(X)[0]
-        # Convert to probability-like score (0 to 1)
-        fraud_probability = float(max(0, min(1, 0.5 - anomaly_score)))
-        is_fraud = bool(raw_pred == -1)
-
-    # Calculate fraud score (0-100)
-    fraud_score = round(fraud_probability * 100, 2)
-
-    # Determine risk level
-    if fraud_probability >= 0.8:
-        risk_level = "CRITICAL"
-    elif fraud_probability >= 0.6:
-        risk_level = "HIGH"
-    elif fraud_probability >= 0.3:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "LOW"
+        risk = "Low"
 
     return {
-        "fraud_probability": round(fraud_probability, 4),
-        "is_fraud": is_fraud,
-        "fraud_score": fraud_score,
-        "risk_level": risk_level,
-        "model_used": model_name,
+        "fraud_probability": fraud_pct,
+        "risk_level": risk,
     }

@@ -1,40 +1,53 @@
 """
 FastAPI application entry point.
 
-Sets up CORS, includes routers, and provides the /train-model endpoint.
+- Auto-trains the ML model on first startup if no model file exists.
+- Creates database tables.
+- Includes the transaction router.
 """
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import os
 from contextlib import asynccontextmanager
 
-from .config import CORS_ORIGINS
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import CORS_ORIGINS, MODEL_PATH
 from .database import engine, Base
-from .schemas import TrainResponse
 from .routes.transactions import router as transactions_router
-from .routes.auth import verify_api_key
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create database tables on startup."""
+    """Startup: create DB tables and auto-train model if missing."""
+    # Delete old DB so schema is always fresh (demo app)
+    db_file = "fraud_detection.db"
+    if os.path.exists(db_file):
+        os.remove(db_file)
+
     Base.metadata.create_all(bind=engine)
-    print("[APP] Database tables created successfully.")
+    print("[APP] Database tables created.")
+
+    # Auto-train model if it doesn't exist
+    if not os.path.exists(MODEL_PATH):
+        print("[APP] No model found — training now...")
+        from .ml.train import train_and_save_model
+        msg = train_and_save_model()
+        print(f"[APP] {msg}")
+    else:
+        print(f"[APP] Model loaded from {MODEL_PATH}")
+
     yield
-    print("[APP] Shutting down...")
+    print("[APP] Shutting down.")
 
 
 app = FastAPI(
     title="FraudShield AI — Fraud Detection API",
-    description=(
-        "AI-Powered Fraud Detection System with ensemble ML models. "
-        "Supports real-time transaction analysis, model training, "
-        "and fraud statistics."
-    ),
-    version="1.0.0",
+    description="AI-Powered Fraud Detection Demo with RandomForest ML.",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -43,36 +56,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# Routes
 app.include_router(transactions_router)
 
 
 @app.get("/")
 async def root():
-    """API health check endpoint."""
+    """Health check."""
     return {
         "name": "FraudShield AI",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "active",
         "docs": "/docs",
     }
-
-
-@app.post("/train-model", response_model=TrainResponse)
-async def train_model(
-    _auth: bool = Depends(verify_api_key),
-):
-    """
-    Train ML models and save the best performer.
-    Generates synthetic data, applies SMOTE, trains 4 models,
-    and selects the best based on F1 score.
-    """
-    try:
-        from .ml.train import train_models
-        result = train_models()
-        return TrainResponse(**result)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Training failed: {str(e)}"
-        )

@@ -1,87 +1,73 @@
 """
-Transaction and prediction API routes.
+Transaction API routes.
+
+POST /api/transaction  – analyse a transaction
+GET  /api/history      – retrieve all past transactions
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..schemas import (
-    TransactionCreate,
-    TransactionResponse,
-    PredictionResponse,
-    StatsResponse,
-)
-from ..crud import create_transaction, get_transactions, get_stats
+from ..schemas import TransactionRequest, TransactionOut
+from ..crud import save_transaction, get_all_transactions
 from ..ml.predict import predict_fraud
-from .auth import verify_api_key
 
-router = APIRouter(prefix="/api/v1", tags=["Transactions"])
+router = APIRouter(tags=["Transactions"])
 
 
-@router.post("/predict", response_model=PredictionResponse)
-async def predict_transaction(
-    transaction: TransactionCreate,
+@router.post("/api/transaction", response_model=TransactionOut)
+async def create_transaction(
+    payload: TransactionRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _auth: bool = Depends(verify_api_key),
 ):
     """
-    Accept a transaction JSON, predict fraud probability, store result in DB,
-    and return the prediction.
+    Accept a transaction, run the ML model, persist, and return the result.
     """
-    try:
-        # Run prediction
-        prediction = predict_fraud(transaction.model_dump())
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+    # Detect client IP
+    ip_address = request.client.host if request.client else "127.0.0.1"
 
-    # Store transaction + prediction in database
+    # Current hour for the model feature
+    current_hour = datetime.now().hour
+
+    # Run prediction
     try:
-        db_transaction = create_transaction(db, transaction, prediction)
+        result = predict_fraud(
+            amount=payload.amount,
+            device=payload.device,
+            hour=current_hour,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {e}")
+
+    # Save to database
+    try:
+        record = save_transaction(
+            db,
+            name=payload.name,
+            amount=payload.amount,
+            device=payload.device,
+            ip_address=ip_address,
+            fraud_probability=result["fraud_probability"],
+            risk_level=result["risk_level"],
+        )
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-    return PredictionResponse(
-        transaction_id=db_transaction.id,
-        amount=transaction.amount,
-        fraud_probability=prediction["fraud_probability"],
-        is_fraud=prediction["is_fraud"],
-        fraud_score=prediction["fraud_score"],
-        risk_level=prediction["risk_level"],
-        model_used=prediction["model_used"],
-        message=f"Transaction analyzed. Risk level: {prediction['risk_level']}",
+    return TransactionOut(
+        name=record.name,
+        amount=record.amount,
+        ip_address=record.ip_address,
+        fraud_probability=record.fraud_probability,
+        risk_level=record.risk_level,
+        timestamp=record.timestamp,
     )
 
 
-@router.get("/transactions", response_model=list[TransactionResponse])
-async def list_transactions(
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, ge=1, le=500),
-    db: Session = Depends(get_db),
-    _auth: bool = Depends(verify_api_key),
-):
-    """
-    Fetch all transactions with pagination.
-    """
-    try:
-        transactions = get_transactions(db, skip=skip, limit=limit)
-        return transactions
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
-
-@router.get("/stats", response_model=StatsResponse)
-async def get_detection_stats(
-    db: Session = Depends(get_db),
-    _auth: bool = Depends(verify_api_key),
-):
-    """
-    Return fraud detection statistics computed from all stored transactions.
-    """
-    try:
-        stats = get_stats(db)
-        return StatsResponse(**stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+@router.get("/api/history", response_model=list[TransactionOut])
+async def transaction_history(db: Session = Depends(get_db)):
+    """Return all transactions sorted newest first."""
+    return get_all_transactions(db)
