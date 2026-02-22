@@ -49,3 +49,43 @@ export async function triggerRetrain() {
   if (!res.ok) throw new Error('Retrain failed');
   return res.json();
 }
+
+/**
+ * Get daily risk insights and analytics.
+ */
+export async function getDailyInsights(date = null) {
+  const url = date 
+    ? `${API}/api/insights/daily?date=${date}`
+    : `${API}/api/insights/daily`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch daily insights');
+  return res.json();
+}
+
+/**
+ * Get weekly trends for the last N days.
+ */
+export async function getWeeklyTrends(days = 7) {
+  const res = await fetch(`${API}/api/insights/weekly?days=${days}`);
+  if (!res.ok) throw new Error('Failed to fetch weekly trends');
+  return res.json();
+}
+
+/**
+ * Get detailed forensics for a specific transaction.
+ */
+export async function getTransactionForensics(transactionId) {
+  const res = await fetch(`${API}/api/forensics/${transactionId}`);
+  if (!res.ok) throw new Error('Failed to fetch forensics');
+  return res.json();
+}
+
+/**
+ * Get all forensics data (or flagged only).
+ */
+export async function getAllForensics(limit = 100, flaggedOnly = false) {
+  const url = `${API}/api/forensics?limit=${limit}&flagged_only=${flaggedOnly}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch forensics');
+  return res.json();
+}

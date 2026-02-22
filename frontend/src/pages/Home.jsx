@@ -9,7 +9,7 @@ import Footer from '../components/Footer'
 
 export default function Home() {
     return (
-        <div className="relative bg-dark-900 min-h-screen overflow-x-hidden">
+        <div className="relative min-h-screen overflow-x-hidden" style={{ background: '#030014' }}>
             {/* 3D Background */}
             <Background3D />
 

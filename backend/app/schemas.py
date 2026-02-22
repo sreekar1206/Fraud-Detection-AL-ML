@@ -49,6 +49,14 @@ class TransactionOut(BaseModel):
     trust_score: Optional[float] = None
     account_age_days: Optional[int] = None
 
+    # Geospatial & Network
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    country_code: Optional[str] = None
+    city: Optional[str] = None
+    is_vpn: Optional[bool] = None
+    ip_traffic_density: Optional[float] = None
+
     model_config = {"from_attributes": True}
 
 

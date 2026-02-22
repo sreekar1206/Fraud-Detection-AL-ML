@@ -107,7 +107,6 @@ def train_ensemble() -> str:
             scale_pos_weight=fraud_ratio,
             random_state=RANDOM_STATE,
             eval_metric="logloss",
-            use_label_encoder=False,
             n_jobs=-1,
         )
     else:

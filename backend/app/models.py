@@ -42,6 +42,14 @@ class Transaction(Base):
     account_age_days = Column(Integer, default=0)
     trust_score = Column(Float, default=0.5)
 
+    # Geospatial & Network Analysis
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    country_code = Column(String(10), nullable=True)
+    city = Column(String(100), nullable=True)
+    is_vpn = Column(Boolean, default=False)
+    ip_traffic_density = Column(Float, nullable=True)  # Transactions per IP in last 24h
+
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
     def __repr__(self):
