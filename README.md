@@ -194,3 +194,10 @@ Transaction Request
            ▼
     Admin Feedback Loop → Champion-Challenger Retrain
 ```
+
+
+---
+
+## Project Status
+
+Actively maintained. Last reviewed: 2026-07-27.
